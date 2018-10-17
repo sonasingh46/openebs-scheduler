@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-pod
+  labels:
+    env: development
+spec:
+  schedulerName: openebs-scheduler
+  containers:
+  - name: label-example
+    image: sonasingh46/node-web-app:latest
+    ports:
+    - containerPort: 8000

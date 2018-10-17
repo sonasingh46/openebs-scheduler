@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openebs-scheduler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openebs-scheduler-binding
+subjects:
+- kind: ServiceAccount
+  name: openebs-scheduler
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: system:kube-scheduler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openebs-scheduler-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    apiVersion: componentconfig/v1alpha1
+    kind: KubeSchedulerConfiguration
+    schedulerName: openebs-scheduler
+    algorithmSource:
+      policy:
+        configMap:
+          namespace: kube-system
+          name: openebs-scheduler-policy
+    leaderElection:
+      leaderElect: true
+      lockObjectName: openebs-scheduler
+      lockObjectNamespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openebs-scheduler-policy
+  namespace: kube-system
+data:
+ policy.cfg : |
+  {
+    "kind" : "Policy",
+        "apiVersion" : "v1",
+        "predicates" : [
+          {"name" : "PodFitsHostPorts"},
+          {"name" : "PodFitsResources"},
+          {"name" : "NoDiskConflict"},
+          {"name" : "MatchNodeSelector"},
+          {"name" : "HostName"}
+        ],
+        "priorities" : [
+        ],
+        "extenders" : [{
+          "urlPrefix": "http://localhost",
+          "filterVerb": "filter",
+          "prioritizeVerb": "prioritize",
+          "preemptVerb": "preemption",
+          "bindVerb": "",
+          "weight": 1,
+          "enableHttps": false,
+          "nodeCacheCapable": false
+        }],
+        "hardPodAffinitySymmetricWeight" : 10
+  }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openebs-scheduler
+  namespace: kube-system
+  labels:
+    app: openebs-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openebs-scheduler
+  template:
+    metadata:
+      labels:
+        app: openebs-scheduler
+    spec:
+      volumes:
+      - name: openebs-scheduler-config
+        configMap:
+          name: openebs-scheduler-config
+      serviceAccountName: openebs-scheduler
+      containers:
+      - name: openebs-scheduler-ctr
+        image: gcr.io/google_containers/hyperkube:v1.11.1
+        imagePullPolicy: IfNotPresent
+        args:
+        - kube-scheduler
+        - --config=/openebs-scheduler/config.yaml
+        - -v=4
+        volumeMounts:
+        - name: openebs-scheduler-config
+          mountPath: /openebs-scheduler
+      - name: openebs-scheduler-extender-ctr
+        image: sonasingh46/openebs-scheduler:v3.5
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+        ports:
+          - containerPort: 80
